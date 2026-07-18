@@ -4,7 +4,7 @@
 
 Requirements:
 
-- Node.js 20 or newer
+- Node.js 22 or newer
 - npm
 - Pi coding agent 0.80.10 or newer for interactive validation
 

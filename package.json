@@ -4,7 +4,7 @@
   "description": "Pi-native Parallax protocol enforcement, batched verification, traces, adversarial planning, and durable Horizon execution",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "packageManager": "npm@11.7.0",
   "keywords": [
