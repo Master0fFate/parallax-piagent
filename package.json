@@ -1,0 +1,63 @@
+{
+  "name": "parallax-piagent",
+  "version": "0.2.0",
+  "description": "Pi-native Parallax protocol enforcement, batched verification, traces, adversarial planning, and durable Horizon execution",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-coding-agent",
+    "parallax",
+    "verification",
+    "planning"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Master0fFate/parallax-piagent.git"
+  },
+  "files": [
+    "agents",
+    "bin",
+    "extensions",
+    "src",
+    "skills",
+    "prompts",
+    "README.md",
+    "DESIGN.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "parallax-pi": "./bin/parallax-pi.mjs"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/parallax/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.80.10",
+    "@earendil-works/pi-coding-agent": "^0.80.10",
+    "@earendil-works/pi-tui": "^0.80.10",
+    "@types/node": "^22.19.19",
+    "typebox": "^1.0.55",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.4"
+  }
+}
