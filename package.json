@@ -3,6 +3,10 @@
   "version": "0.2.0",
   "description": "Pi-native Parallax protocol enforcement, batched verification, traces, adversarial planning, and durable Horizon execution",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "npm@11.7.0",
   "keywords": [
     "pi-package",
     "pi-coding-agent",
@@ -24,6 +28,8 @@
     "prompts",
     "README.md",
     "DESIGN.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
     "LICENSE"
   ],
   "bin": {

@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a focused improvement to Parallax for Pi
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete workflow or failure mode needs improvement?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior rather than only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Include affected modes, tools, state, and verification behavior when known.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope checks
+      options:
+        - label: This preserves Pi's trust boundary.
+          required: true
+        - label: This does not require recursive extension loading.
+          required: true
+        - label: I considered how the behavior can be verified.
+          required: true

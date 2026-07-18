@@ -1,5 +1,9 @@
 # Parallax for Pi
 
+[![CI](https://github.com/Master0fFate/parallax-piagent/actions/workflows/ci.yml/badge.svg)](https://github.com/Master0fFate/parallax-piagent/actions/workflows/ci.yml)
+[![Node.js ≥20](https://img.shields.io/badge/Node.js-%E2%89%A520-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A Pi-native engineering supervisor with protocol gates, adaptive planning, batched verification, branch-aware traces, isolated delegation, and durable Horizon execution.
 
 ## Install
@@ -17,6 +21,8 @@ pi -e ./extensions/parallax/index.ts
 ```
 
 Pi packages execute with your user permissions. Review extension source before installation.
+
+Project documentation: [design](DESIGN.md) · [contributing](CONTRIBUTING.md) · [security](SECURITY.md) · [changelog](CHANGELOG.md)
 
 ## Design
 
