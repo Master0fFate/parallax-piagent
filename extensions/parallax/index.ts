@@ -50,11 +50,11 @@ const DELEGATE_TOOL = "parallax_delegate";
 const HYPERPLAN_TOOL = "parallax_hyperplan";
 const HORIZON_ADVANCE_TOOL = "parallax_horizon_advance";
 const HORIZON_TOOLS = ["parallax_horizon_session", "parallax_horizon_plan", "parallax_horizon_memory"];
-const LAZY_TOOLS = new Set([DELEGATE_TOOL, HYPERPLAN_TOOL, HORIZON_ADVANCE_TOOL, ...HORIZON_TOOLS]);
+const SUPERVISOR_TOOLS = new Set([CORE_TOOL, DELEGATE_TOOL, HYPERPLAN_TOOL, HORIZON_ADVANCE_TOOL, ...HORIZON_TOOLS]);
 const WRITE_TOOLS = new Set(["write", "edit"]);
 
 export function activeToolsForMode(current: string[], mode: ParallaxMode): string[] {
-  const active = new Set(current.filter((name) => !LAZY_TOOLS.has(name)));
+  const active = new Set(current.filter((name) => !SUPERVISOR_TOOLS.has(name)));
   active.add(CORE_TOOL);
   if (mode !== "build") active.add(DELEGATE_TOOL);
   if (mode === "plan" || mode === "horizon") active.add(HYPERPLAN_TOOL);
@@ -150,6 +150,7 @@ const HyperplanParams = Type.Object({
 
 export default function parallaxPi(pi: ExtensionAPI): void {
   let state = createState("pending", process.cwd());
+  let supervisionActive = false;
   let config: ParallaxConfig = {
     strictness: "standard",
     adaptiveProtocol: true,
@@ -202,7 +203,19 @@ export default function parallaxPi(pi: ExtensionAPI): void {
     pi.setActiveTools(activeToolsForMode(pi.getActiveTools(), mode));
   };
 
+  const deactivateModeTools = (): void => {
+    pi.setActiveTools(pi.getActiveTools().filter((name) => !SUPERVISOR_TOOLS.has(name)));
+  };
+
   const updateUi = (ctx: ExtensionContext): void => {
+    if (!supervisionActive) {
+      ctx.ui.setStatus("parallax", undefined);
+      ctx.ui.setWidget("parallax", undefined);
+      restoreEnvironment("PARALLAX_MODE", originalEnvironment.mode);
+      restoreEnvironment("PARALLAX_SESSION_ID", originalEnvironment.sessionId);
+      restoreEnvironment("PARALLAX_FRICTION_RETRIES", originalEnvironment.retries);
+      return;
+    }
     const progress = protocolProgress(state);
     const verdict = state.friction.lastVerdict ? ` V:${state.friction.lastVerdict}` : "";
     const status = `PX ${state.mode} ${progress.completed}/6${verdict}`;
@@ -227,6 +240,7 @@ export default function parallaxPi(pi: ExtensionAPI): void {
   };
 
   const setRuntimeMode = (mode: ParallaxMode, ctx: ExtensionContext): string => {
+    supervisionActive = true;
     setMode(state, mode);
     activateModeTools(mode);
     persist();
@@ -348,14 +362,24 @@ export default function parallaxPi(pi: ExtensionAPI): void {
   registerHorizonAdvanceTool(pi, () => state, () => config, () => store, verify);
 
   pi.registerCommand("parallax", {
-    description: "Control Parallax or launch a supervised task: /parallax [status|health|plan|build|debug|horizon|verify|reset|<request>]",
+    description: "Control Parallax or launch a supervised task: /parallax [status|health|plan|build|debug|horizon|verify|reset|off|<request>]",
     handler: async (args, ctx) => {
       const request = args.trim();
       const action = request.toLowerCase() || "status";
       if (["plan", "build", "debug", "horizon"].includes(action)) {
         ctx.ui.notify(setRuntimeMode(action as ParallaxMode, ctx), "info");
       } else if (action === "verify") {
+        supervisionActive = true;
+        activateModeTools(state.mode);
+        updateUi(ctx);
         ctx.ui.notify(await verify(ctx, [], true), state.friction.lastVerdict === "fail" ? "error" : "info");
+      } else if (action === "off" || action === "disable") {
+        supervisionActive = false;
+        pendingFiles = new Set();
+        recoveryWriteUsed = false;
+        deactivateModeTools();
+        updateUi(ctx);
+        ctx.ui.notify("Parallax supervision disabled for this session.", "info");
       } else if (action === "health") {
         ctx.ui.notify(`Healthy. State ${state.schemaVersion}; ${state.trace.phases.length} phases; ${state.trace.verifications.length} checks; ${pi.getActiveTools().filter((name) => name.startsWith("parallax")).length} active Parallax tools.`, "info");
       } else if (action === "reset") {
@@ -435,15 +459,17 @@ export default function parallaxPi(pi: ExtensionAPI): void {
     config = await loadConfig(ctx.cwd, ctx.isProjectTrusted());
     store = new HorizonStore(ctx.cwd);
     restore(ctx);
-    const active = pi.getActiveTools().filter((name) => !LAZY_TOOLS.has(name));
-    pi.setActiveTools([...new Set([...active, CORE_TOOL])]);
-    activateModeTools(state.mode);
+    supervisionActive = false;
+    pendingFiles = new Set();
+    recoveryWriteUsed = false;
+    deactivateModeTools();
     updateUi(ctx);
   });
 
   pi.on("session_tree", async (_event, ctx) => {
     restore(ctx);
-    activateModeTools(state.mode);
+    if (supervisionActive) activateModeTools(state.mode);
+    else deactivateModeTools();
     updateUi(ctx);
   });
 
@@ -452,6 +478,7 @@ export default function parallaxPi(pi: ExtensionAPI): void {
   });
 
   pi.on("tool_call", async (event) => {
+    if (!supervisionActive) return;
     const command = event.toolName === "bash" && typeof event.input.command === "string" ? event.input.command : "";
     const shellKind = event.toolName === "bash" ? classifyShellCommand(command) : undefined;
     if (state.mode === "plan") {
@@ -489,6 +516,7 @@ export default function parallaxPi(pi: ExtensionAPI): void {
   });
 
   pi.on("tool_result", async (event) => {
+    if (!supervisionActive) return;
     if (WRITE_TOOLS.has(event.toolName) && !event.isError) {
       const input = event.input as { path?: unknown };
       if (typeof input.path === "string") pendingFiles.add(input.path);
@@ -501,7 +529,7 @@ export default function parallaxPi(pi: ExtensionAPI): void {
   });
 
   pi.on("turn_end", async (_event, ctx) => {
-    if (!config.autoVerify || pendingFiles.size === 0) return;
+    if (!supervisionActive || !config.autoVerify || pendingFiles.size === 0) return;
     const files = [...pendingFiles];
     pendingFiles = new Set();
     const message = await verify(ctx, files, false, ctx.signal);
@@ -514,6 +542,7 @@ export default function parallaxPi(pi: ExtensionAPI): void {
   });
 
   pi.on("before_agent_start", async (_event, ctx) => {
+    if (!supervisionActive) return;
     if (state.mode === "horizon" && ctx.isProjectTrusted() && !state.horizonSessionId) {
       const resumable = (await store.listSessions())
         .filter((session) => session.status === "planning" || session.status === "executing")

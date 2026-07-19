@@ -36,13 +36,14 @@ describe("Parallax extension gates", () => {
     const cwd = await mkdtemp(join(tmpdir(), "parallax-extension-"));
     await writeFile(join(cwd, "package.json"), JSON.stringify({ scripts: { check: "node -e \"process.exit(0)\"" } }));
     const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
+    const commands = new Map<string, (args: string, ctx: ExtensionContext) => Promise<void>>();
     const tools = new Map<string, { execute: (...args: unknown[]) => Promise<unknown> }>();
     let activeTools = ["read", "write", "edit", "bash"];
     const sendMessage = vi.fn();
     const exec = vi.fn(async () => ({ stdout: "ok", stderr: "", code: 0, killed: false }));
     const pi = {
       registerTool: (tool: { name: string; execute: (...args: unknown[]) => Promise<unknown> }) => tools.set(tool.name, tool),
-      registerCommand: () => undefined,
+      registerCommand: (name: string, command: { handler: (args: string, ctx: ExtensionContext) => Promise<void> }) => commands.set(name, command.handler),
       registerShortcut: () => undefined,
       on: (name: string, handler: (...args: unknown[]) => unknown) => handlers.set(name, [...(handlers.get(name) ?? []), handler]),
       getActiveTools: () => activeTools,
@@ -76,7 +77,13 @@ describe("Parallax extension gates", () => {
 
     try {
       await emit("session_start", { reason: "startup" });
+      expect(activeTools).not.toContain("parallax");
+      expect(await emit("before_agent_start", { systemPrompt: "base" })).toBeUndefined();
       const mutation = { toolName: "bash", input: { command: "node -e \"require('fs').writeFileSync('x','y')\"" } };
+      expect(await emit("tool_call", mutation)).toBeUndefined();
+
+      await commands.get("parallax")!("build", ctx);
+      expect(activeTools).toContain("parallax");
       expect(await emit("tool_call", mutation)).toMatchObject({ block: true });
 
       const core = tools.get("parallax")!;
@@ -100,6 +107,10 @@ describe("Parallax extension gates", () => {
       );
       const verifiedCommit = await core.execute("id", { action: "checkin", step: "commit", evidence: "Full solution selected" }, undefined, undefined, ctx);
       expect(JSON.stringify(verifiedCommit)).toContain("commit marked complete");
+
+      await commands.get("parallax")!("off", ctx);
+      expect(activeTools).not.toContain("parallax");
+      expect(await emit("before_agent_start", { systemPrompt: "base" })).toBeUndefined();
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

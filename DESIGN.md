@@ -12,7 +12,8 @@ Preserve Parallax's useful guarantees while fitting Pi's extension, session, tru
 
 ## Feedback
 
-- Footer status shows mode, protocol progress, and latest verification verdict.
+- Supervision is opt-in; ordinary prompts do not receive Parallax prompt injection, active tools, mutation gates, or automatic verification.
+- Footer status shows mode, protocol progress, and latest verification verdict while supervision is active.
 - Tool results and notifications expose gate blocks and verification failures.
 - Full oversized verification output is saved to `.parallax/verification/`.
 
@@ -20,7 +21,7 @@ Preserve Parallax's useful guarantees while fitting Pi's extension, session, tru
 
 - Tool preflight enforces gates before built-in file and shell mutations.
 - Successful file mutations and potentially partial shell mutations accumulate during the turn.
-- `turn_end` runs one serialized verification pass for the batch and steers its evidence into the next model turn.
+- While supervision is active, `turn_end` runs one serialized verification pass for the batch and steers its evidence into the next model turn.
 - Verification uses Pi's cross-platform local shell operations, one run-wide deadline, process-tree cancellation, and strict exit-status semantics (only a completed zero exit passes).
 - Core actions, Horizon writes, and verification runs each use a queue to avoid concurrent state corruption.
 - Generic delegates are read-only; the mutating worker is available only behind Horizon's strict gate and verification cycle.

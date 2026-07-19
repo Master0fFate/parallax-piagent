@@ -13,3 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Isolated read-only delegation and adaptive Hyperplan review.
 - Durable Horizon planning, worker execution, verification, review, retries, and resume.
 - Project-trust enforcement, CLI trace analytics, and CI validation.
+
+### Fixed
+
+- Parallax supervision is now opt-in instead of injecting protocol instructions, exposing supervisor tools, gating mutations, or auto-verifying ordinary prompts at session startup. Slash commands and shortcuts explicitly activate it.
