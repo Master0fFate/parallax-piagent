@@ -590,6 +590,12 @@ export default function parallaxPi(pi: ExtensionAPI): void {
     if (ctx.hasUI) ctx.ui.notify(message, state.friction.lastVerdict === "fail" ? "error" : "info");
   });
 
+  pi.on("agent_end", async (_event, ctx) => {
+    // Queue before Pi settles: AgentSession explicitly drains follow-ups added by
+    // agent_end handlers, so a runnable full-autonomy plan stays in one agent run.
+    await continueHorizon(ctx);
+  });
+
   pi.on("agent_settled", async (_event, ctx) => {
     if (automaticSupervision) {
       supervisionActive = false;
@@ -599,6 +605,8 @@ export default function parallaxPi(pi: ExtensionAPI): void {
       deactivateModeTools();
       updateUi(ctx);
     }
+    // Recovery path for a resumed/planning session that reached idle without an
+    // agent_end continuation. Normal checkpoint chaining happens above.
     await continueHorizon(ctx);
   });
 

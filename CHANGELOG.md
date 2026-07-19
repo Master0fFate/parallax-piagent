@@ -18,5 +18,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
-- Full-autonomy Horizon sessions now schedule a follow-up agent turn after every settled runnable checkpoint instead of stopping after the first feature.
+- Full-autonomy Horizon sessions now queue each runnable follow-up at `agent_end`, before Pi settles, instead of relying on a re-entrant post-settle trigger that could leave the session idle at a checkpoint.
 - Parallax no longer injects protocol instructions, exposes supervisor tools, gates mutations, or auto-verifies ordinary prompts at session startup. Explicit controls and mutation-triggered task-scoped activation replace always-on supervision.

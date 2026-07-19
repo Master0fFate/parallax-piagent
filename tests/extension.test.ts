@@ -137,7 +137,7 @@ describe("Parallax extension gates", () => {
       const horizonSession = tools.get("parallax_horizon_session")!;
       await horizonSession.execute("id", { action: "init", sessionId: "full-session", goal: "Complete every feature", autonomy: "full" }, undefined, undefined, ctx);
       const messagesBeforeContinuation = sendMessage.mock.calls.length;
-      await emit("agent_settled", {});
+      await emit("agent_end", { messages: [] });
       expect(sendMessage).toHaveBeenCalledTimes(messagesBeforeContinuation + 1);
       expect(sendMessage).toHaveBeenLastCalledWith(
         expect.objectContaining({
@@ -147,8 +147,26 @@ describe("Parallax extension gates", () => {
         { deliverAs: "followUp", triggerTurn: true },
       );
 
+      await horizonSession.execute("id", { action: "init", sessionId: "recovery-session", goal: "Recover an idle autopilot", autonomy: "full" }, undefined, undefined, ctx);
+      const messagesBeforeRecovery = sendMessage.mock.calls.length;
+      await emit("agent_settled", {});
+      expect(sendMessage).toHaveBeenCalledTimes(messagesBeforeRecovery + 1);
+
+      const horizonPlan = tools.get("parallax_horizon_plan")!;
+      await horizonSession.execute("id", { action: "init", sessionId: "blocked-session", goal: "Wait for external access", autonomy: "full" }, undefined, undefined, ctx);
+      await horizonPlan.execute("id", {
+        action: "write-state",
+        sessionId: "blocked-session",
+        data: JSON.stringify({ paused: true, pauseReason: "External credentials required." }),
+      }, undefined, undefined, ctx);
+      const messagesBeforeBlockedSession = sendMessage.mock.calls.length;
+      await emit("agent_end", { messages: [] });
+      await emit("agent_settled", {});
+      expect(sendMessage).toHaveBeenCalledTimes(messagesBeforeBlockedSession);
+
       await horizonSession.execute("id", { action: "init", sessionId: "semi-session", goal: "Pause at milestones", autonomy: "semi" }, undefined, undefined, ctx);
       const messagesBeforeSemiAutonomy = sendMessage.mock.calls.length;
+      await emit("agent_end", { messages: [] });
       await emit("agent_settled", {});
       expect(sendMessage).toHaveBeenCalledTimes(messagesBeforeSemiAutonomy);
     } finally {

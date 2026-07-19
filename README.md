@@ -153,7 +153,7 @@ Horizon uses four cohesive surfaces:
 - `parallax_horizon_memory`: decisions, research, session skills, archived traces
 - `parallax_horizon_advance`: execute one restart-safe feature checkpoint through worker → verification → reviewer → score
 
-The active Pi session ID is the default Horizon ID, so callers do not repeat it on every operation. Session-created skills are injected only while that Horizon session is active. A new Pi session in Horizon mode discovers the latest resumable project session. Full autonomy automatically schedules the next agent turn between checkpoints until the durable plan is terminal or externally blocked; semi autonomy pauses at milestone boundaries; supervised autonomy pauses after each feature. One-feature advancement preserves cancellation and recovery boundaries instead of hiding a multi-hour process inside one uninterruptible tool call.
+The active Pi session ID is the default Horizon ID, so callers do not repeat it on every operation. Session-created skills are injected only while that Horizon session is active. A new Pi session in Horizon mode discovers the latest resumable project session. Full autonomy queues the next turn before Pi settles and keeps advancing until the durable plan is terminal or externally blocked; semi autonomy pauses at milestone boundaries; supervised autonomy pauses after each feature. One-feature advancement preserves cancellation and recovery boundaries instead of turning checkpoints into user-facing stops or hiding a multi-hour process inside one uninterruptible tool call.
 
 ## CLI
 
