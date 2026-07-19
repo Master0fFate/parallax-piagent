@@ -40,6 +40,7 @@ describe("Parallax extension gates", () => {
     const tools = new Map<string, { execute: (...args: unknown[]) => Promise<unknown> }>();
     let activeTools = ["read", "write", "edit", "bash"];
     const sendMessage = vi.fn();
+    const sendUserMessage = vi.fn();
     const exec = vi.fn(async () => ({ stdout: "ok", stderr: "", code: 0, killed: false }));
     const pi = {
       registerTool: (tool: { name: string; execute: (...args: unknown[]) => Promise<unknown> }) => tools.set(tool.name, tool),
@@ -52,6 +53,7 @@ describe("Parallax extension gates", () => {
       getThinkingLevel: () => "high",
       exec,
       sendMessage,
+      sendUserMessage,
     } as unknown as ExtensionAPI;
     parallaxPi(pi);
 
@@ -130,6 +132,25 @@ describe("Parallax extension gates", () => {
       await commands.get("parallax")!("off", ctx);
       expect(activeTools).not.toContain("parallax");
       expect(await emit("before_agent_start", { systemPrompt: "base" })).toBeUndefined();
+
+      await commands.get("parallax")!("horizon", ctx);
+      const horizonSession = tools.get("parallax_horizon_session")!;
+      await horizonSession.execute("id", { action: "init", sessionId: "full-session", goal: "Complete every feature", autonomy: "full" }, undefined, undefined, ctx);
+      const messagesBeforeContinuation = sendMessage.mock.calls.length;
+      await emit("agent_settled", {});
+      expect(sendMessage).toHaveBeenCalledTimes(messagesBeforeContinuation + 1);
+      expect(sendMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          customType: "parallax-horizon-continuation",
+          content: expect.stringContaining("full-session"),
+        }),
+        { deliverAs: "followUp", triggerTurn: true },
+      );
+
+      await horizonSession.execute("id", { action: "init", sessionId: "semi-session", goal: "Pause at milestones", autonomy: "semi" }, undefined, undefined, ctx);
+      const messagesBeforeSemiAutonomy = sendMessage.mock.calls.length;
+      await emit("agent_settled", {});
+      expect(sendMessage).toHaveBeenCalledTimes(messagesBeforeSemiAutonomy);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

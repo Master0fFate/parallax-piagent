@@ -287,6 +287,20 @@ export default function parallaxPi(pi: ExtensionAPI): void {
     return current;
   };
 
+  const continueHorizon = async (ctx: ExtensionContext): Promise<void> => {
+    if (!supervisionActive || state.mode !== "horizon" || !ctx.isProjectTrusted() || !state.horizonSessionId) return;
+    const [plan, execution] = await Promise.all([
+      store.readPlan(state.horizonSessionId),
+      store.readState(state.horizonSessionId),
+    ]);
+    if (!plan || plan.autonomy !== "full" || plan.status === "completed" || plan.status === "failed" || execution?.paused) return;
+    pi.sendMessage({
+      customType: "parallax-horizon-continuation",
+      content: `Continue autonomous Horizon session ${plan.sessionId} from its durable checkpoint. Do not stop to summarize while runnable work remains: finish planning if needed, then advance the next feature. Stop only when the plan is terminal or an external blocker has been recorded.`,
+      display: false,
+    }, { deliverAs: "followUp", triggerTurn: true });
+  };
+
   pi.registerTool({
     name: CORE_TOOL,
     label: "Parallax",
@@ -577,13 +591,15 @@ export default function parallaxPi(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
-    if (!automaticSupervision) return;
-    supervisionActive = false;
-    automaticSupervision = false;
-    pendingFiles = new Set();
-    recoveryWriteUsed = false;
-    deactivateModeTools();
-    updateUi(ctx);
+    if (automaticSupervision) {
+      supervisionActive = false;
+      automaticSupervision = false;
+      pendingFiles = new Set();
+      recoveryWriteUsed = false;
+      deactivateModeTools();
+      updateUi(ctx);
+    }
+    await continueHorizon(ctx);
   });
 
   pi.on("before_agent_start", async (_event, ctx) => {
