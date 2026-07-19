@@ -8,15 +8,16 @@ const MUTATING_PATTERNS = [
   /\bpip\s+(install|uninstall)\b/i,
   /\bgit\s+(add|commit|push|pull|merge|rebase|reset|checkout|switch|stash|cherry-pick|revert|tag|init|clone|clean)\b/i,
   /\b(sudo|kill|pkill|killall|reboot|shutdown)\b/i,
+  /[<(]\s*\(/,
   /\$\(|`|[\r\n]/,
 ];
 
 const READ_ONLY_PREFIXES = [
-  "cat", "head", "tail", "less", "more", "grep", "rg", "find", "fd", "ls", "pwd", "echo", "printf",
-  "wc", "sort", "uniq", "diff", "file", "stat", "du", "df", "tree", "which", "where", "whereis", "type",
-  "env", "printenv", "uname", "whoami", "id", "date", "ps", "git status", "git log", "git diff", "git show",
+  "cat", "head", "tail", "less", "more", "grep", "rg", "fd", "ls", "pwd", "echo", "printf",
+  "wc", "uniq", "diff", "file", "stat", "du", "df", "tree", "which", "where", "whereis", "type",
+  "printenv", "uname", "whoami", "id", "date", "ps", "git status", "git log", "git diff", "git show",
   "git branch", "git remote", "npm list", "npm view", "npm info", "npm outdated", "node --version", "python --version",
-  "python3 --version", "jq", "sed -n", "awk",
+  "python3 --version", "jq",
 ];
 
 export type ShellCommandKind = "read-only" | "verification" | "mutation";
@@ -43,7 +44,17 @@ function splitCommands(command: string): string[] {
 
 function isReadOnlySegment(segment: string): boolean {
   const value = segment.toLowerCase();
+  if (hasUnsafeReadOnlyArgument(value)) return false;
   return READ_ONLY_PREFIXES.some((prefix) => value === prefix || value.startsWith(`${prefix} `));
+}
+
+function hasUnsafeReadOnlyArgument(value: string): boolean {
+  return [
+    /(?:^|\s)--output(?:=|\s|$)/,
+    /(?:^|\s)--ext-diff(?:\s|$)/,
+    /(?:^|\s)--textconv(?:\s|$)/,
+    /(?:^|\s)--pre(?:=|\s|$)/,
+  ].some((pattern) => pattern.test(value));
 }
 
 function isVerificationSegment(segment: string): boolean {

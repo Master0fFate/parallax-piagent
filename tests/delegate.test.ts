@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Model } from "@earendil-works/pi-ai";
-import { agentCanMutate, discoverDelegateAgents, runDelegates } from "../src/delegate.js";
+import { agentCanMutate, discoverDelegateAgents, resolveDelegateCwd, runDelegates } from "../src/delegate.js";
 
 const dirs: string[] = [];
 async function temp(): Promise<string> {
@@ -38,6 +38,18 @@ describe("delegate agent discovery", () => {
       scope: "builtin",
       projectTrusted: false,
     })).rejects.toThrow("trusted Pi project");
+  });
+
+  it("confines delegate working directories to the trusted project", async () => {
+    const dir = await temp();
+    const nested = join(dir, "packages", "feature");
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(dir, "not-a-directory"), "x");
+
+    expect(await resolveDelegateCwd(dir)).toBe(await realpath(dir));
+    expect(await resolveDelegateCwd(dir, "packages/feature")).toBe(await realpath(nested));
+    await expect(resolveDelegateCwd(dir, "..")).rejects.toThrow("trusted project directory");
+    await expect(resolveDelegateCwd(dir, "not-a-directory")).rejects.toThrow("not a directory");
   });
 
   it("allows trusted project agents to override built-ins", async () => {

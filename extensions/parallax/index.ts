@@ -78,7 +78,7 @@ const CoreParams = Type.Object({
 const DelegateTaskParams = Type.Object({
   agent: Type.String({ description: "Delegate role name" }),
   task: Type.String({ description: "Atomic task for the delegate" }),
-  cwd: Type.Optional(Type.String()),
+  cwd: Type.Optional(Type.String({ description: "Existing directory within the trusted project root for this delegate" })),
 });
 
 const DelegateParams = Type.Object({

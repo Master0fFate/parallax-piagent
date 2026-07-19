@@ -1,6 +1,6 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import { truncateUtf8 } from "./text.js";
 import {
@@ -90,6 +90,17 @@ export async function discoverDelegateAgents(
   return [...agents.values()];
 }
 
+export async function resolveDelegateCwd(projectCwd: string, requestedCwd?: string): Promise<string> {
+  const root = await realpath(projectCwd);
+  const candidate = await realpath(resolve(root, requestedCwd ?? "."));
+  if (!(await stat(candidate)).isDirectory()) throw new Error(`Delegate cwd is not a directory: ${requestedCwd ?? projectCwd}`);
+  const pathFromRoot = relative(root, candidate);
+  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${sep}`) || isAbsolute(pathFromRoot)) {
+    throw new Error("Delegate cwd must stay within the trusted project directory.");
+  }
+  return candidate;
+}
+
 export async function runDelegates(
   mode: DelegateMode,
   tasks: DelegateTask[],
@@ -146,7 +157,12 @@ async function runOne(
   if (options.signal?.aborted) return failedResult(item, "Delegation aborted before start.", agent.source);
 
   const started = Date.now();
-  const cwd = item.cwd ?? options.cwd;
+  let cwd: string;
+  try {
+    cwd = await resolveDelegateCwd(options.cwd, item.cwd);
+  } catch (error) {
+    return failedResult(item, String(error), agent.source);
+  }
   const settingsManager = SettingsManager.inMemory({
     compaction: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
     retry: { enabled: true, maxRetries: 2, baseDelayMs: 1_000 },
