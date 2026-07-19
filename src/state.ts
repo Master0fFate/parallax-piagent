@@ -28,6 +28,7 @@ const PREREQUISITE: Partial<Record<ProtocolStep, ProtocolStep>> = {
 export const DEFAULT_CONFIG: ParallaxConfig = {
   strictness: "standard",
   adaptiveProtocol: true,
+  autoActivateOnMutation: true,
   autoVerify: true,
   designDocRequired: false,
   minScore: 70,

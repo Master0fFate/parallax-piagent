@@ -30,6 +30,9 @@ export async function loadConfig(cwd: string, projectTrusted: boolean): Promise<
       adaptiveProtocol: typeof raw.adaptiveProtocol === "boolean"
         ? raw.adaptiveProtocol
         : DEFAULT_CONFIG.adaptiveProtocol,
+      autoActivateOnMutation: typeof raw.autoActivateOnMutation === "boolean"
+        ? raw.autoActivateOnMutation
+        : DEFAULT_CONFIG.autoActivateOnMutation,
       autoVerify: typeof raw.autoVerify === "boolean" ? raw.autoVerify : DEFAULT_CONFIG.autoVerify,
       designDocRequired: typeof raw.designDocRequired === "boolean"
         ? raw.designDocRequired

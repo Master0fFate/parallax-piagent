@@ -151,9 +151,12 @@ const HyperplanParams = Type.Object({
 export default function parallaxPi(pi: ExtensionAPI): void {
   let state = createState("pending", process.cwd());
   let supervisionActive = false;
+  let automaticSupervision = false;
+  let autoActivationEnabled = true;
   let config: ParallaxConfig = {
     strictness: "standard",
     adaptiveProtocol: true,
+    autoActivateOnMutation: true,
     autoVerify: true,
     designDocRequired: false,
     minScore: 70,
@@ -218,7 +221,7 @@ export default function parallaxPi(pi: ExtensionAPI): void {
     }
     const progress = protocolProgress(state);
     const verdict = state.friction.lastVerdict ? ` V:${state.friction.lastVerdict}` : "";
-    const status = `PX ${state.mode} ${progress.completed}/6${verdict}`;
+    const status = `PX${automaticSupervision ? " AUTO" : ""} ${state.mode} ${progress.completed}/6${verdict}`;
     ctx.ui.setStatus("parallax", ctx.ui.theme.fg(state.friction.lastVerdict === "fail" ? "error" : "accent", status));
     if (state.mode === "plan") {
       const remaining = missingWriteSteps(state, config);
@@ -239,8 +242,9 @@ export default function parallaxPi(pi: ExtensionAPI): void {
     process.env.PARALLAX_FRICTION_RETRIES = String(state.friction.retriesLeft);
   };
 
-  const setRuntimeMode = (mode: ParallaxMode, ctx: ExtensionContext): string => {
+  const setRuntimeMode = (mode: ParallaxMode, ctx: ExtensionContext, automatic = false): string => {
     supervisionActive = true;
+    automaticSupervision = automatic;
     setMode(state, mode);
     activateModeTools(mode);
     persist();
@@ -326,7 +330,7 @@ export default function parallaxPi(pi: ExtensionAPI): void {
           }
           case "mode":
             if (!params.mode) throw new Error("mode action requires mode.");
-            text = setRuntimeMode(params.mode as ParallaxMode, ctx);
+            text = setRuntimeMode(params.mode as ParallaxMode, ctx, automaticSupervision);
             break;
           case "analyze":
             if (!params.topic?.trim()) throw new Error("analyze requires topic.");
@@ -362,7 +366,7 @@ export default function parallaxPi(pi: ExtensionAPI): void {
   registerHorizonAdvanceTool(pi, () => state, () => config, () => store, verify);
 
   pi.registerCommand("parallax", {
-    description: "Control Parallax or launch a supervised task: /parallax [status|health|plan|build|debug|horizon|verify|reset|off|<request>]",
+    description: "Control Parallax or launch a supervised task: /parallax [status|health|plan|build|debug|horizon|verify|reset|auto|off|<request>]",
     handler: async (args, ctx) => {
       const request = args.trim();
       const action = request.toLowerCase() || "status";
@@ -370,16 +374,28 @@ export default function parallaxPi(pi: ExtensionAPI): void {
         ctx.ui.notify(setRuntimeMode(action as ParallaxMode, ctx), "info");
       } else if (action === "verify") {
         supervisionActive = true;
+        automaticSupervision = false;
         activateModeTools(state.mode);
         updateUi(ctx);
         ctx.ui.notify(await verify(ctx, [], true), state.friction.lastVerdict === "fail" ? "error" : "info");
-      } else if (action === "off" || action === "disable") {
+      } else if (action === "auto") {
         supervisionActive = false;
+        automaticSupervision = false;
+        autoActivationEnabled = true;
         pendingFiles = new Set();
         recoveryWriteUsed = false;
         deactivateModeTools();
         updateUi(ctx);
-        ctx.ui.notify("Parallax supervision disabled for this session.", "info");
+        ctx.ui.notify("Parallax is dormant and will auto-activate on the first attempted mutation.", "info");
+      } else if (action === "off" || action === "disable") {
+        supervisionActive = false;
+        automaticSupervision = false;
+        autoActivationEnabled = false;
+        pendingFiles = new Set();
+        recoveryWriteUsed = false;
+        deactivateModeTools();
+        updateUi(ctx);
+        ctx.ui.notify("Parallax supervision and automatic activation are disabled for this session.", "info");
       } else if (action === "health") {
         ctx.ui.notify(`Healthy. State ${state.schemaVersion}; ${state.trace.phases.length} phases; ${state.trace.verifications.length} checks; ${pi.getActiveTools().filter((name) => name.startsWith("parallax")).length} active Parallax tools.`, "info");
       } else if (action === "reset") {
@@ -390,7 +406,10 @@ export default function parallaxPi(pi: ExtensionAPI): void {
           ctx.ui.notify("Parallax reset.", "info");
         }
       } else if (action === "status") {
-        ctx.ui.notify(formatStatus(state), "info");
+        const runtime = supervisionActive
+          ? automaticSupervision ? "automatic supervision for the current agent run" : "manual supervision"
+          : autoActivationEnabled ? "dormant; mutation trigger armed" : "disabled";
+        ctx.ui.notify(`${formatStatus(state)}\nRuntime: ${runtime}.`, "info");
       } else {
         setRuntimeMode("build", ctx);
         pi.sendUserMessage(`Use Parallax protocol to complete this request:\n\n${request}`);
@@ -460,6 +479,8 @@ export default function parallaxPi(pi: ExtensionAPI): void {
     store = new HorizonStore(ctx.cwd);
     restore(ctx);
     supervisionActive = false;
+    automaticSupervision = false;
+    autoActivationEnabled = config.autoActivateOnMutation;
     pendingFiles = new Set();
     recoveryWriteUsed = false;
     deactivateModeTools();
@@ -477,10 +498,25 @@ export default function parallaxPi(pi: ExtensionAPI): void {
     recoveryWriteUsed = false;
   });
 
-  pi.on("tool_call", async (event) => {
-    if (!supervisionActive) return;
+  pi.on("tool_call", async (event, ctx) => {
     const command = event.toolName === "bash" && typeof event.input.command === "string" ? event.input.command : "";
     const shellKind = event.toolName === "bash" ? classifyShellCommand(command) : undefined;
+    const isMutation = WRITE_TOOLS.has(event.toolName) || shellKind === "mutation";
+    if (!supervisionActive) {
+      if (!autoActivationEnabled || !isMutation) return;
+      resetProtocol(state, config.maxRetries);
+      setRuntimeMode("build", ctx, true);
+      const input = event.input as { path?: unknown };
+      const path = typeof input.path === "string" ? input.path : undefined;
+      const missing = path
+        ? missingWriteSteps(state, config, path)
+        : requiredWriteSteps("strict", config.designDocRequired).filter((step) => !state.protocol.completed[step]);
+      if (ctx.hasUI) ctx.ui.notify("Parallax auto-activated; the first mutation was held until its gates are satisfied.", "info");
+      return {
+        block: true,
+        reason: `Parallax auto-activated on an attempted ${path ? `mutation of ${path}` : "shell mutation"}; no mutation ran. Complete ${missing.join(", ")} using the parallax tool with concrete evidence, then retry.`,
+      };
+    }
     if (state.mode === "plan") {
       if (WRITE_TOOLS.has(event.toolName)) {
         return { block: true, reason: "Parallax PLAN mode is read-only. Switch with /parallax build." };
@@ -490,7 +526,6 @@ export default function parallaxPi(pi: ExtensionAPI): void {
       }
     }
 
-    const isMutation = WRITE_TOOLS.has(event.toolName) || shellKind === "mutation";
     if (!isMutation) return;
     const writeInput = event.input as { path?: unknown };
     const path = typeof writeInput.path === "string" ? writeInput.path : undefined;
@@ -539,6 +574,16 @@ export default function parallaxPi(pi: ExtensionAPI): void {
       display: true,
     }, { deliverAs: "steer" });
     if (ctx.hasUI) ctx.ui.notify(message, state.friction.lastVerdict === "fail" ? "error" : "info");
+  });
+
+  pi.on("agent_settled", async (_event, ctx) => {
+    if (!automaticSupervision) return;
+    supervisionActive = false;
+    automaticSupervision = false;
+    pendingFiles = new Set();
+    recoveryWriteUsed = false;
+    deactivateModeTools();
+    updateUi(ctx);
   });
 
   pi.on("before_agent_start", async (_event, ctx) => {

@@ -19,6 +19,7 @@ describe("trusted configuration", () => {
     await writeFile(join(dir, ".parallax", "config.json"), JSON.stringify({ strictness: "relaxed", verifyCommand: "dangerous" }));
     const config = await loadConfig(dir, false);
     expect(config.strictness).toBe("standard");
+    expect(config.autoActivateOnMutation).toBe(true);
     expect(config.verifyCommand).toBeUndefined();
   });
 
@@ -26,6 +27,7 @@ describe("trusted configuration", () => {
     const dir = await temp();
     await writeFile(join(dir, ".parallax", "config.json"), JSON.stringify({
       strictness: "strict",
+      autoActivateOnMutation: false,
       minScore: 85,
       maxRetries: 999,
       trivialPatterns: ["*.json", 42],
@@ -33,6 +35,7 @@ describe("trusted configuration", () => {
     }));
     const config = await loadConfig(dir, true);
     expect(config.strictness).toBe("strict");
+    expect(config.autoActivateOnMutation).toBe(false);
     expect(config.minScore).toBe(85);
     expect(config.maxRetries).toBe(3);
     expect(config.trivialPatterns).toEqual(["*.json"]);

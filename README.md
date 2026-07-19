@@ -59,7 +59,7 @@ Project documentation: [design](DESIGN.md) · [contributing](CONTRIBUTING.md) ·
 
 - One session-scoped state model restored from Pi's branch-aware custom entries.
 - One verification pass after all sibling mutations in a turn.
-- Seven cohesive custom tools total, inactive by default until a Parallax slash command or shortcut explicitly activates supervision.
+- Seven cohesive custom tools total, inactive while dormant; an explicit mode or an attempted mutation can activate supervision.
 - Isolated in-process Pi SDK delegates with recursive extension loading disabled.
 - Project-local Horizon state with safe IDs, serialized operations, and atomic writes.
 - Recovery mode permits one corrective mutation per turn until checks pass.
@@ -80,6 +80,8 @@ Project documentation: [design](DESIGN.md) · [contributing](CONTRIBUTING.md) ·
 /horizon                  Resume the latest runnable Horizon session
 /parallax verify          Run the full detected verification set
 /parallax reset           Reset protocol and friction state
+/parallax auto            Arm automatic mutation-triggered supervision
+/parallax off             Disable supervision and auto-activation for this session
 ```
 
 Mode shortcuts: `Ctrl+Alt+P` plan, `Ctrl+Alt+B` build, `Ctrl+Alt+D` debug, and `Ctrl+Alt+H` Horizon. Packaged prompt entrypoints are `/parallax-plan`, `/parallax-debug`, and `/parallax-horizon`.
@@ -96,7 +98,9 @@ The `parallax` tool consolidates protocol and trace operations:
 - `trace` (`view`, `json`, or `pr`)
 - `reset`
 
-Parallax supervision is opt-in: ordinary prompts do not receive Parallax instructions, expose Parallax tools to the model, gate mutations, or trigger verification. Activate it with `/parallax build|plan|debug|horizon`, `/parallax <request>`, `/horizon`, or a mode shortcut; use `/parallax status` or `/parallax health` without activating it, and `/parallax off` to disable it for the session. Once active, default `standard` strictness requires evidence-backed ambiguity and invariants before `write` or `edit`. `strict` also requires the verification gate; `relaxed` requires only ambiguity. Unknown or mutating shell commands are conservatively treated as strict mutations so they cannot bypass protocol gates. Commit and summary check-ins remain blocked until verification passes.
+Parallax is dormant for ordinary prompts: they receive no Parallax instructions, expose no Parallax tools, and trigger no verification. By default it is safely armed: if the model attempts `write`, `edit`, or a potentially mutating shell command, Parallax blocks that first mutation, resets the task gates, activates BUILD supervision for the current agent run, and deactivates again only after Pi reports the run fully settled. Read-only tools do not activate it, so simple Q&A remains dormant unless the model unexpectedly attempts a mutation. Pi does not expose a built-in semantic “coding task” classifier, so activation uses observable mutation intent rather than fragile prompt keyword guessing.
+
+Explicit `/parallax build|plan|debug|horizon`, `/parallax <request>`, `/horizon`, and mode shortcuts remain active until `/parallax off`. Use `/parallax auto` to re-arm dormant automatic activation; `/parallax off` disables both manual supervision and automatic activation for the rest of the session. Once active, default `standard` strictness requires evidence-backed ambiguity and invariants before `write` or `edit`. `strict` also requires the verification gate; `relaxed` requires only ambiguity. Unknown or mutating shell commands are conservatively treated as strict mutations so they cannot bypass protocol gates. Commit and summary check-ins remain blocked until verification passes.
 
 ## Configuration
 
@@ -106,6 +110,7 @@ Create `.parallax/config.json`:
 {
   "strictness": "standard",
   "adaptiveProtocol": true,
+  "autoActivateOnMutation": true,
   "autoVerify": true,
   "designDocRequired": false,
   "minScore": 70,
@@ -117,11 +122,11 @@ Create `.parallax/config.json`:
 }
 ```
 
-Project configuration is read only when Pi considers the project trusted. Project-defined verification commands and Horizon execution are also disabled before trust. With adaptive protocol enabled, trivial paths use relaxed gates and high-risk paths always use strict gates.
+Project configuration is read only when Pi considers the project trusted. Project-defined verification commands and Horizon execution are also disabled before trust. Set `autoActivateOnMutation` to `false` for strictly manual, callable-only behavior. With adaptive protocol enabled, trivial paths use relaxed gates and high-risk paths always use strict gates.
 
 ## Verification behavior
 
-When supervision is active, Parallax collects successful `write` and `edit` results plus shell mutations during a model turn, then runs one fast check at `turn_end`. The result is injected into the next model turn so failures are corrected before completion. Manual `/parallax verify` runs the full detected set and activates supervision. A project `check` script is treated as canonical; otherwise Parallax discovers `typecheck`, `test`, and `lint` scripts in that order. Rust, Go, Python, and .NET checks are also detected, while any other toolchain can use `verifyCommand` in `.parallax/config.json`.
+When supervision is active, Parallax collects successful `write` and `edit` results plus shell mutations during a model turn, then runs one fast check at `turn_end`. The result is injected into the next model turn so failures are corrected before completion. Automatic supervision waits for `agent_settled`, so queued verification feedback and retries finish before its tools and prompt surface are removed. Manual `/parallax verify` runs the full detected set and activates supervision. A project `check` script is treated as canonical; otherwise Parallax discovers `typecheck`, `test`, and `lint` scripts in that order. Rust, Go, Python, and .NET checks are also detected, while any other toolchain can use `verifyCommand` in `.parallax/config.json`.
 
 Verification runs through Pi's cross-platform local shell backend rather than hard-coded `cmd`, npm, or POSIX process launching. A completed exit code of `0` passes; a nonzero or killed/null exit, timeout, or startup error fails; user cancellation is propagated rather than mislabeled. Output text alone never overrides the process result, so custom checkers must return a nonzero exit code when they report failure. One deadline covers the full verification run, and large output is truncated in context and preserved under `.parallax/verification/`.
 

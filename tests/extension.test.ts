@@ -32,7 +32,7 @@ describe("Pi mode tool activation", () => {
 });
 
 describe("Parallax extension gates", () => {
-  it("gates shell mutations and returns batched verification to the next model turn", async () => {
+  it("auto-activates only on mutation, then gates and verifies the agent run", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "parallax-extension-"));
     await writeFile(join(cwd, "package.json"), JSON.stringify({ scripts: { check: "node -e \"process.exit(0)\"" } }));
     const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
@@ -79,8 +79,27 @@ describe("Parallax extension gates", () => {
       await emit("session_start", { reason: "startup" });
       expect(activeTools).not.toContain("parallax");
       expect(await emit("before_agent_start", { systemPrompt: "base" })).toBeUndefined();
+      expect(await emit("tool_call", { toolName: "bash", input: { command: "git status" } })).toBeUndefined();
+      expect(activeTools).not.toContain("parallax");
+
       const mutation = { toolName: "bash", input: { command: "node -e \"require('fs').writeFileSync('x','y')\"" } };
+      expect(await emit("tool_call", mutation)).toMatchObject({
+        block: true,
+        reason: expect.stringContaining("auto-activated"),
+      });
+      expect(activeTools).toContain("parallax");
+      expect(await emit("before_agent_start", { systemPrompt: "base" })).toMatchObject({
+        systemPrompt: expect.stringContaining("## PARALLAX"),
+      });
+      await tools.get("parallax")!.execute("id", { action: "mode", mode: "debug" }, undefined, undefined, ctx);
+
+      await emit("agent_settled", {});
+      expect(activeTools).not.toContain("parallax");
+      expect(await emit("before_agent_start", { systemPrompt: "base" })).toBeUndefined();
+
+      await commands.get("parallax")!("off", ctx);
       expect(await emit("tool_call", mutation)).toBeUndefined();
+      expect(activeTools).not.toContain("parallax");
 
       await commands.get("parallax")!("build", ctx);
       expect(activeTools).toContain("parallax");

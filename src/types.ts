@@ -6,6 +6,7 @@ export type VerificationVerdict = "pass" | "fail" | "skipped";
 export interface ParallaxConfig {
   strictness: Strictness;
   adaptiveProtocol: boolean;
+  autoActivateOnMutation: boolean;
   autoVerify: boolean;
   designDocRequired: boolean;
   minScore: number;

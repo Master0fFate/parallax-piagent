@@ -16,6 +16,7 @@ import type { ParallaxConfig } from "../src/types.js";
 const config = (strictness: ParallaxConfig["strictness"]): ParallaxConfig => ({
   strictness,
   adaptiveProtocol: true,
+  autoActivateOnMutation: true,
   autoVerify: true,
   designDocRequired: false,
   minScore: 70,

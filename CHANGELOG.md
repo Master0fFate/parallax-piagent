@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Mutation-triggered automatic supervision that blocks the first attempted mutation, remains dormant for read-only prompts, and deactivates after the agent run settles.
+- `autoActivateOnMutation` configuration plus `/parallax auto` and session-level `/parallax off` controls.
 - Pi-native Parallax supervisor with evidence-backed mutation gates.
 - Batched verification with corrective feedback and branch-aware traces.
 - Isolated read-only delegation and adaptive Hyperplan review.
@@ -16,4 +18,4 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
-- Parallax supervision is now opt-in instead of injecting protocol instructions, exposing supervisor tools, gating mutations, or auto-verifying ordinary prompts at session startup. Slash commands and shortcuts explicitly activate it.
+- Parallax no longer injects protocol instructions, exposes supervisor tools, gates mutations, or auto-verifies ordinary prompts at session startup. Explicit controls and mutation-triggered task-scoped activation replace always-on supervision.
