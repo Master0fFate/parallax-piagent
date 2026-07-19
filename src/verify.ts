@@ -1,6 +1,6 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createLocalBashOperations, type BashOperations } from "@earendil-works/pi-coding-agent";
 import { truncateUtf8 } from "./text.js";
 import type { ParallaxConfig, VerificationRecord } from "./types.js";
 
@@ -97,33 +97,36 @@ async function packageRunner(cwd: string): Promise<"pnpm" | "yarn" | "bun" | "np
 }
 
 function packageCommand(runner: "pnpm" | "yarn" | "bun" | "npm", script: string): VerifyCommand {
-  const args = runArgs(runner, script);
-  const label = `${runner} ${args.join(" ")}`;
-  if (process.platform === "win32") {
-    return { command: "cmd", args: ["/d", "/s", "/c", label], label };
-  }
-  return { command: runner, args, label };
+  const args = runner === "yarn" ? [script] : ["run", script];
+  return { command: runner, args, label: `${runner} ${args.join(" ")}` };
 }
 
-function runArgs(runner: string, script: string): string[] {
-  return runner === "yarn" ? [script] : ["run", script];
+function quoteShellArg(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
-function shellCommand(command: string): VerifyCommand {
-  return process.platform === "win32"
-    ? { command: "cmd", args: ["/d", "/s", "/c", command], label: command }
-    : { command: "sh", args: ["-c", command], label: command };
+export function formatVerifyCommand(command: VerifyCommand): string {
+  return [command.command, ...command.args].map(quoteShellArg).join(" ");
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  throw new Error("Verification cancelled.");
 }
 
 export async function runVerification(
-  pi: ExtensionAPI,
   cwd: string,
   config: ParallaxConfig,
   files: string[],
   thorough: boolean,
   signal?: AbortSignal,
+  operations: BashOperations = createLocalBashOperations(),
 ): Promise<VerificationRecord> {
-  const detected = config.verifyCommand ? [shellCommand(config.verifyCommand)] : await detectVerifyCommands(cwd);
+  throwIfAborted(signal);
+  const detected = config.verifyCommand
+    ? [{ command: config.verifyCommand, args: [], label: config.verifyCommand }]
+    : await detectVerifyCommands(cwd);
   const commands = thorough ? detected : detected.slice(0, 1);
   const started = Date.now();
 
@@ -140,21 +143,39 @@ export async function runVerification(
   }
 
   const output: string[] = [];
+  const executed: string[] = [];
   let exitCode = 0;
   for (const item of commands) {
-    try {
-      const result = await pi.exec(item.command, item.args, {
-        cwd,
-        timeout: config.verificationTimeoutMs,
-        ...(signal ? { signal } : {}),
-      });
-      output.push(`$ ${item.label}\n${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}`.trim());
-      exitCode = result.code ?? -1;
-      if (exitCode !== 0 || result.killed) break;
-    } catch (error) {
-      if (signal?.aborted) throw error;
+    throwIfAborted(signal);
+    const remainingMs = config.verificationTimeoutMs - (Date.now() - started);
+    if (remainingMs <= 0) {
       exitCode = -1;
-      output.push(`$ ${item.label}\nVerification command could not run: ${String(error)}`);
+      output.push(`$ ${item.label}\nVerification timed out before this command could run.`);
+      break;
+    }
+
+    const chunks: Buffer[] = [];
+    executed.push(item.label);
+    try {
+      const result = await operations.exec(
+        config.verifyCommand ? item.command : formatVerifyCommand(item),
+        cwd,
+        {
+          onData: (data) => chunks.push(Buffer.from(data)),
+          ...(signal ? { signal } : {}),
+          timeout: remainingMs / 1000,
+        },
+      );
+      throwIfAborted(signal);
+      const commandOutput = Buffer.concat(chunks).toString("utf8").trim();
+      output.push(`$ ${item.label}${commandOutput ? `\n${commandOutput}` : ""}`);
+      exitCode = result.exitCode ?? -1;
+      if (exitCode !== 0) break;
+    } catch (error) {
+      throwIfAborted(signal);
+      exitCode = -1;
+      const commandOutput = Buffer.concat(chunks).toString("utf8").trim();
+      output.push(`$ ${item.label}${commandOutput ? `\n${commandOutput}` : ""}\nVerification command could not complete: ${String(error)}`);
       break;
     }
   }
@@ -171,7 +192,7 @@ export async function runVerification(
 
   return {
     timestamp: new Date().toISOString(),
-    command: commands.map((item) => item.label).join(" && "),
+    command: executed.join(" && "),
     files,
     verdict: exitCode === 0 ? "pass" : "fail",
     exitCode,
@@ -180,4 +201,3 @@ export async function runVerification(
     ...(fullOutputPath ? { fullOutputPath } : {}),
   };
 }
-

@@ -34,7 +34,7 @@ describe("Pi mode tool activation", () => {
 describe("Parallax extension gates", () => {
   it("gates shell mutations and returns batched verification to the next model turn", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "parallax-extension-"));
-    await writeFile(join(cwd, "package.json"), JSON.stringify({ scripts: { check: "test" } }));
+    await writeFile(join(cwd, "package.json"), JSON.stringify({ scripts: { check: "node -e \"process.exit(0)\"" } }));
     const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
     const tools = new Map<string, { execute: (...args: unknown[]) => Promise<unknown> }>();
     let activeTools = ["read", "write", "edit", "bash"];
@@ -94,7 +94,6 @@ describe("Parallax extension gates", () => {
       await emit("tool_result", { ...mutation, isError: false });
       await emit("turn_end", { turnIndex: 0, message: {}, toolResults: [] });
 
-      expect(exec).toHaveBeenCalledOnce();
       expect(sendMessage).toHaveBeenCalledWith(
         expect.objectContaining({ customType: "parallax-verification", content: expect.stringContaining("PASS") }),
         { deliverAs: "steer" },

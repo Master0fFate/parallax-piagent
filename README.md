@@ -121,7 +121,9 @@ Project configuration is read only when Pi considers the project trusted. Projec
 
 ## Verification behavior
 
-Parallax collects successful `write` and `edit` results plus shell mutations during a model turn, then runs one fast check at `turn_end`. The result is injected into the next model turn so failures are corrected before completion. Manual `/parallax verify` runs the full detected set. A project `check` script is treated as canonical; otherwise Parallax discovers `typecheck`, `test`, and `lint` scripts in that order. Large output is truncated in context and preserved under `.parallax/verification/`.
+Parallax collects successful `write` and `edit` results plus shell mutations during a model turn, then runs one fast check at `turn_end`. The result is injected into the next model turn so failures are corrected before completion. Manual `/parallax verify` runs the full detected set. A project `check` script is treated as canonical; otherwise Parallax discovers `typecheck`, `test`, and `lint` scripts in that order. Rust, Go, Python, and .NET checks are also detected, while any other toolchain can use `verifyCommand` in `.parallax/config.json`.
+
+Verification runs through Pi's cross-platform local shell backend rather than hard-coded `cmd`, npm, or POSIX process launching. A completed exit code of `0` passes; a nonzero or killed/null exit, timeout, or startup error fails; user cancellation is propagated rather than mislabeled. Output text alone never overrides the process result, so custom checkers must return a nonzero exit code when they report failure. One deadline covers the full verification run, and large output is truncated in context and preserved under `.parallax/verification/`.
 
 After consecutive failures exhaust the configured retries, Parallax enters recovery mode. It permits one corrective mutation per turn instead of blocking the operation needed to repair the build.
 

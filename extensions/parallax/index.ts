@@ -256,7 +256,7 @@ export default function parallaxPi(pi: ExtensionAPI): void {
         updateUi(ctx);
         return message;
       }
-      const result = await runVerification(pi, ctx.cwd, config, files, thorough, signal);
+      const result = await runVerification(ctx.cwd, config, files, thorough, signal);
       recordVerification(state, result, config.maxRetries);
       persist();
       updateUi(ctx);

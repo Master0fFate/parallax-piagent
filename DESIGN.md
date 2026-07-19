@@ -21,6 +21,7 @@ Preserve Parallax's useful guarantees while fitting Pi's extension, session, tru
 - Tool preflight enforces gates before built-in file and shell mutations.
 - Successful file mutations and potentially partial shell mutations accumulate during the turn.
 - `turn_end` runs one serialized verification pass for the batch and steers its evidence into the next model turn.
+- Verification uses Pi's cross-platform local shell operations, one run-wide deadline, process-tree cancellation, and strict exit-status semantics (only a completed zero exit passes).
 - Core actions, Horizon writes, and verification runs each use a queue to avoid concurrent state corruption.
 - Generic delegates are read-only; the mutating worker is available only behind Horizon's strict gate and verification cycle.
 - Delegates use isolated in-memory Pi sessions and share only explicit task/output boundaries.
