@@ -25,11 +25,18 @@ describe("verification detection", () => {
     expect((await detectVerifyCommands(dir)).map((item) => item.label)).toEqual(["npm run check"]);
   });
 
+  it("uses a platform-runnable npm executable", async () => {
+    const dir = await temp();
+    await writeFile(join(dir, "package.json"), JSON.stringify({ scripts: { check: "tsc" } }));
+    expect((await detectVerifyCommands(dir))[0]?.command).toBe(process.platform === "win32" ? "npm.cmd" : "npm");
+  });
+
   it("uses lockfile package manager", async () => {
     const dir = await temp();
     await writeFile(join(dir, "package.json"), JSON.stringify({ scripts: { typecheck: "tsc", test: "vitest" } }));
     await writeFile(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'");
-    expect((await detectVerifyCommands(dir)).map((item) => item.command)).toEqual(["pnpm", "pnpm"]);
+    const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+    expect((await detectVerifyCommands(dir)).map((item) => item.command)).toEqual([executable, executable]);
   });
 
   it("ignores npm's placeholder test", async () => {

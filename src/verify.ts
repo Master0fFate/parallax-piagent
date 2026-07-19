@@ -75,16 +75,17 @@ async function detectNodeCommands(cwd: string): Promise<VerifyCommand[]> {
   }
 
   const runner = await packageRunner(cwd);
-  if (scripts.check) return [{ command: runner, args: runArgs(runner, "check"), label: `${runner} run check` }];
+  const executable = packageExecutable(runner);
+  if (scripts.check) return [{ command: executable, args: runArgs(runner, "check"), label: `${runner} run check` }];
 
   const commands: VerifyCommand[] = [];
   for (const script of ["typecheck", "test", "lint"] as const) {
     const body = scripts[script];
     if (!body || (script === "test" && /no test specified/i.test(body))) continue;
-    commands.push({ command: runner, args: runArgs(runner, script), label: `${runner} run ${script}` });
+    commands.push({ command: executable, args: runArgs(runner, script), label: `${runner} run ${script}` });
   }
   if (commands.length === 0 && scripts.build) {
-    commands.push({ command: runner, args: runArgs(runner, "build"), label: `${runner} run build` });
+    commands.push({ command: executable, args: runArgs(runner, "build"), label: `${runner} run build` });
   }
   return commands;
 }
@@ -94,6 +95,10 @@ async function packageRunner(cwd: string): Promise<"pnpm" | "yarn" | "bun" | "np
   if (await exists(join(cwd, "yarn.lock"))) return "yarn";
   if (await exists(join(cwd, "bun.lock")) || await exists(join(cwd, "bun.lockb"))) return "bun";
   return "npm";
+}
+
+function packageExecutable(runner: "pnpm" | "yarn" | "bun" | "npm"): string {
+  return process.platform === "win32" ? `${runner}.cmd` : runner;
 }
 
 function runArgs(runner: string, script: string): string[] {
