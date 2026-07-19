@@ -24,6 +24,7 @@ Preserve Parallax's useful guarantees while fitting Pi's extension, session, tru
 - Core actions, Horizon writes, and verification runs each use a queue to avoid concurrent state corruption.
 - Generic delegates are read-only; the mutating worker is available only behind Horizon's strict gate and verification cycle.
 - Delegates use isolated in-memory Pi sessions and share only explicit task/output boundaries.
+- Delegate models are constrained to the active model's authenticated provider catalog; scouts and critics use the least-cost context-qualified model, while higher-judgment roles retain the active model unless an exact same-provider override is configured.
 - Horizon advances one feature per call so cancellation, retry, and resume always have a durable checkpoint.
 
 ## Boundaries

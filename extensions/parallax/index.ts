@@ -812,7 +812,7 @@ function formatDelegateResults(results: DelegateResult[]): string {
   const totalCost = results.reduce((sum, result) => sum + result.usage.cost, 0);
   return [
     `Delegation: ${results.filter((result) => result.success).length}/${results.length} succeeded; cost $${totalCost.toFixed(4)}`,
-    ...results.map((result) => `\n## ${result.agent} [${result.success ? "complete" : "failed"}]\n${result.output}`),
+    ...results.map((result) => `\n## ${result.agent} [${result.success ? "complete" : "failed"}]${result.model ? ` (${result.model})` : ""}\n${result.output}`),
   ].join("\n");
 }
 

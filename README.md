@@ -8,19 +8,50 @@ A Pi-native engineering supervisor with protocol gates, adaptive planning, batch
 
 ## Install
 
+Parallax is a **Pi package**: an npm or Git package whose `pi` manifest tells Pi which extensions, skills, and prompts to load. `pi install` downloads/registers that package in Pi's settings; it is not the same as `npm install -g`, which only makes a Node CLI available and does not activate a Pi extension.
+
+### 1. Install and authenticate Pi
+
+Parallax requires Node.js 22 or later and Pi:
+
+```bash
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+pi --version
+pi
+```
+
+In Pi, run `/login` and choose a provider, or configure that provider's API key as Pi documents. Confirm the provider has an available model with `/model`; Horizon delegates can only use authenticated models from the active model's provider.
+
+### 2. Install Parallax
+
+Install from Git (available now) into your user-level Pi configuration:
+
 ```bash
 pi install git:github.com/Master0fFate/parallax-piagent
+pi list
 ```
 
-Local development:
+Restart Pi in the project you want to work on. Its startup header should list the Parallax extension, skills, and prompts. To install only for the current project and share the package reference through `.pi/settings.json`, use `-l`:
 
 ```bash
-npm install
-npm run check
-pi -e ./extensions/parallax/index.ts
+pi install -l git:github.com/Master0fFate/parallax-piagent
 ```
 
-Pi packages execute with your user permissions. Review extension source before installation.
+After an npm release is published, the equivalent install is `pi install npm:parallax-piagent@<version>`. Pin a Git tag or commit for reproducibility, for example `pi install git:github.com/Master0fFate/parallax-piagent@v0.2.0`; use `pi update --extensions` for unpinned packages, reinstall with `pi install git:github.com/Master0fFate/parallax-piagent@<new-ref>` to move a pinned Git ref, and `pi remove <source>` to uninstall.
+
+### Local development
+
+```bash
+git clone https://github.com/Master0fFate/parallax-piagent.git
+cd parallax-piagent
+npm install
+npm run check
+pi install .
+```
+
+For a one-run extension test without registering the package, use `pi -e ./extensions/parallax/index.ts`.
+
+Pi packages execute with your user permissions. Review extension source before installation, and trust a project only when you trust its project-local configuration and agent definitions.
 
 Project documentation: [design](DESIGN.md) · [contributing](CONTRIBUTING.md) · [security](SECURITY.md) · [changelog](CHANGELOG.md)
 
@@ -96,9 +127,9 @@ After consecutive failures exhaust the configured retries, Parallax enters recov
 
 ## Delegation
 
-`parallax_delegate` activates in PLAN, DEBUG, and HORIZON modes after project trust. It runs isolated agents through Pi's typed SDK in the same process rather than spawning nested CLI processes. Each delegate receives an in-memory session, an explicit tool allowlist, project context files, the active model, and no extensions, skills, prompts, or themes. This prevents recursive Parallax loading while preserving cancellation, provider auth, token accounting, and streaming updates.
+`parallax_delegate` activates in PLAN, DEBUG, and HORIZON modes after project trust. It runs isolated agents through Pi's typed SDK in the same process rather than spawning nested CLI processes. Each delegate receives an in-memory session, an explicit tool allowlist, project context files, and no extensions, skills, prompts, or themes. This prevents recursive Parallax loading while preserving cancellation, provider auth, token accounting, and streaming updates.
 
-Built-in roles are `scout`, `planner`, `reviewer`, `worker`, and `critic`. Single, parallel, and `{previous}` chain workflows are supported. Generic delegation is read-only: agents with `write`, `edit`, or `bash` tools are rejected so they cannot bypass parent verification. The worker is enabled only inside `parallax_horizon_advance`, which owns the strict gate and full verification cycle. Trusted `.pi/agents/*.md` definitions can override built-ins when `scope` is `project` or `all`.
+Built-in roles are `scout`, `planner`, `reviewer`, `worker`, and `critic`. Every delegate model is selected from the authenticated catalog of the active model's provider: low-risk `scout` and `critic` work use the least-cost text model with sufficient context, while planning, review, and implementation retain the active model unless their agent definition names an exact authenticated model from that same provider. This prevents cross-provider routing and avoids spending a premium model on reconnaissance by default. To override a role deliberately, set its Markdown frontmatter to `model: <exact-model-id>`; a missing, cross-provider, or unauthenticated model is rejected rather than silently routed elsewhere. Single, parallel, and `{previous}` chain workflows are supported. Generic delegation is read-only: agents with `write`, `edit`, or `bash` tools are rejected so they cannot bypass parent verification. The worker is enabled only inside `parallax_horizon_advance`, which owns the strict gate and full verification cycle. Trusted `.pi/agents/*.md` definitions can override built-ins when `scope` is `project` or `all`.
 
 ## Hyperplan
 
@@ -106,7 +137,7 @@ Built-in roles are `scout`, `planner`, `reviewer`, `worker`, and `critic`. Singl
 
 ## Horizon
 
-Launch Horizon directly with `/horizon <goal>`. It researches, plans, delegates, verifies, self-corrects, and proceeds through durable feature checkpoints without asking whether to continue. Horizon requires Pi project trust because it loads project-local plans and executes implementation workers.
+Launch Horizon directly with `/horizon <goal>`. It is an orchestrator: it researches, plans, delegates execution to an isolated worker, verifies, reviews, self-corrects, and proceeds through durable feature checkpoints without asking whether to continue. Horizon requires Pi project trust because it loads project-local plans and executes implementation workers.
 
 Horizon uses four cohesive surfaces:
 

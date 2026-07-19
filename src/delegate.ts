@@ -41,6 +41,7 @@ export interface DelegateResult {
   output: string;
   success: boolean;
   error?: string;
+  model?: string;
   durationMs: number;
   toolCalls: string[];
   usage: {
@@ -181,7 +182,12 @@ async function runOne(
   });
   await resourceLoader.reload();
 
-  const model = resolveAgentModel(agent.model, modelRuntime) ?? options.model;
+  let model: Model<any>;
+  try {
+    model = selectDelegateModel(agent, options.model, await modelRuntime.getAvailable(options.model.provider));
+  } catch (error) {
+    return failedResult(item, String(error), agent.source, Date.now() - started);
+  }
   const { session } = await createAgentSession({
     cwd,
     model,
@@ -201,6 +207,7 @@ async function runOne(
       task: item.task,
       output: truncateUtf8(streamingText, { maxBytes: 4_000 }),
       success: false,
+      model: formatModel(model),
       durationMs: Date.now() - started,
       toolCalls: [...toolCalls],
       usage: emptyUsage(),
@@ -234,6 +241,7 @@ async function runOne(
       output,
       success: !error,
       ...(error ? { error } : {}),
+      model: formatModel(model),
       durationMs: Date.now() - started,
       toolCalls,
       usage: {
@@ -304,11 +312,51 @@ export function agentCanMutate(agent: Pick<DelegateAgent, "tools">): boolean {
   return agent.tools.some((tool) => tool === "write" || tool === "edit" || tool === "bash");
 }
 
-function resolveAgentModel(spec: string | undefined, runtime: ModelRuntime): Model<any> | undefined {
-  if (!spec) return undefined;
-  const slash = spec.indexOf("/");
-  if (slash > 0) return runtime.getModel(spec.slice(0, slash), spec.slice(slash + 1));
-  return runtime.getModels().find((model) => model.id === spec);
+export function selectDelegateModel(
+  agent: Pick<DelegateAgent, "name" | "model">,
+  parent: Model<any>,
+  available: readonly Model<any>[],
+): Model<any> {
+  const candidates = available.filter((model) => model.provider === parent.provider && model.input.includes("text"));
+  if (candidates.length === 0) {
+    throw new Error(`No authenticated text model is available from the parent provider (${parent.provider}) for delegate ${agent.name}.`);
+  }
+
+  if (agent.model) {
+    const requestedId = agent.model.startsWith(`${parent.provider}/`)
+      ? agent.model.slice(parent.provider.length + 1)
+      : agent.model;
+    const requested = candidates.find((model) => model.id === requestedId);
+    if (!requested) {
+      throw new Error(`Delegate ${agent.name} requests model ${agent.model}, which is not an authenticated model from the parent provider (${parent.provider}).`);
+    }
+    return requested;
+  }
+
+  const active = candidates.find((model) => model.id === parent.id);
+  if (!active) {
+    throw new Error(`The active model ${formatModel(parent)} is not authenticated for isolated delegation. Configure provider credentials before delegating.`);
+  }
+  if (agent.name !== "scout" && agent.name !== "critic") return active;
+
+  const minimumContext = Math.min(parent.contextWindow, 32_000);
+  const contextQualified = candidates.filter((model) => model.contextWindow >= minimumContext);
+  const pool = contextQualified.length > 0 ? contextQualified : candidates;
+  return [...pool].sort((left, right) => {
+    const costDifference = modelCost(left) - modelCost(right);
+    if (costDifference !== 0) return costDifference;
+    if (left.id === active.id) return -1;
+    if (right.id === active.id) return 1;
+    return left.id.localeCompare(right.id);
+  })[0]!;
+}
+
+function modelCost(model: Model<any>): number {
+  return model.cost.input + (model.cost.output * 2) + model.cost.cacheRead + model.cost.cacheWrite;
+}
+
+function formatModel(model: Model<any>): string {
+  return `${model.provider}/${model.id}`;
 }
 
 function pendingResult(task: DelegateTask): DelegateResult {

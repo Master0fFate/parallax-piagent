@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Model } from "@earendil-works/pi-ai";
-import { agentCanMutate, discoverDelegateAgents, resolveDelegateCwd, runDelegates } from "../src/delegate.js";
+import { agentCanMutate, discoverDelegateAgents, resolveDelegateCwd, runDelegates, selectDelegateModel } from "../src/delegate.js";
 
 const dirs: string[] = [];
 async function temp(): Promise<string> {
@@ -13,10 +13,41 @@ async function temp(): Promise<string> {
 }
 afterEach(async () => Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))));
 
+function model(id: string, cost: number, contextWindow = 128_000): Model<any> {
+  return {
+    id,
+    name: id,
+    provider: "test-provider",
+    api: "openai-completions",
+    baseUrl: "https://example.test",
+    reasoning: false,
+    input: ["text"],
+    cost: { input: cost, output: cost, cacheRead: 0, cacheWrite: 0 },
+    contextWindow,
+    maxTokens: 16_384,
+  } as Model<any>;
+}
+
 describe("delegate agent discovery", () => {
   it("identifies workers that could bypass parent verification", () => {
     expect(agentCanMutate({ tools: ["read", "edit"] })).toBe(true);
     expect(agentCanMutate({ tools: ["read", "grep"] })).toBe(false);
+  });
+
+  it("routes inexpensive reconnaissance roles to the cheapest qualified model from the parent provider", () => {
+    const active = model("premium", 20);
+    const efficient = model("efficient", 1);
+    expect(selectDelegateModel({ name: "scout" }, active, [active, efficient]).id).toBe("efficient");
+    expect(selectDelegateModel({ name: "critic" }, active, [active, efficient]).id).toBe("efficient");
+    expect(selectDelegateModel({ name: "reviewer" }, active, [active, efficient]).id).toBe("premium");
+  });
+
+  it("allows an exact configured model only from the authenticated parent provider", () => {
+    const active = model("premium", 20);
+    const efficient = model("efficient", 1);
+    expect(selectDelegateModel({ name: "reviewer", model: "efficient" }, active, [active, efficient]).id).toBe("efficient");
+    expect(() => selectDelegateModel({ name: "reviewer", model: "other-provider/efficient" }, active, [active, efficient]))
+      .toThrow("parent provider");
   });
 
   it("loads the five packaged roles", async () => {
