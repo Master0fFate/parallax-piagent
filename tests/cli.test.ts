@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -39,6 +39,7 @@ describe("Parallax CLI", () => {
     const second = run(cwd, "init");
     expect(second.status).toBe(0);
     expect(second.stdout).toContain("Initialized");
+    expect((await stat(join(cwd, ".parallax", "agents"))).isDirectory()).toBe(true);
   });
 
   it("lists, scores, and gates traces", async () => {

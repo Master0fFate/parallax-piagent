@@ -1,4 +1,8 @@
 node_modules/
 coverage/
-.parallax/
+.parallax/*
+!.parallax/.gitignore
+!.parallax/agents/
+!.parallax/agents/*.md
 *.tgz
+.codeviewer-mcp.sqlite

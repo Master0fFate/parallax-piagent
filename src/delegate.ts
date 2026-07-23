@@ -1,4 +1,5 @@
-import { readFile, readdir, realpath, stat } from "node:fs/promises";
+import { link, mkdir, readFile, readdir, realpath, stat, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
@@ -67,7 +68,9 @@ export interface DelegateRunOptions {
 }
 
 const BUILTIN_AGENTS_DIR = fileURLToPath(new URL("../agents/", import.meta.url));
+const PROJECT_AGENTS_PATH = [".parallax", "agents"] as const;
 const MAX_TASKS = 8;
+const MAX_AGENT_NAME_LENGTH = 80;
 
 export async function discoverDelegateAgents(
   cwd: string,
@@ -82,8 +85,8 @@ export async function discoverDelegateAgents(
   if (scope === "builtin" || scope === "all") groups.push(await loadAgents(BUILTIN_AGENTS_DIR, "builtin"));
   if (scope === "user" || scope === "all") groups.push(await loadAgents(join(getAgentDir(), "agents"), "user"));
   if (scope === "project" || scope === "all") {
-    const projectDir = await findProjectAgentsDir(cwd);
-    if (projectDir) groups.push(await loadAgents(projectDir, "project"));
+    const projectDirs = await findProjectAgentsDirs(cwd);
+    for (const projectDir of projectDirs) groups.push(await loadAgents(projectDir, "project"));
   }
 
   const agents = new Map<string, DelegateAgent>();
@@ -92,7 +95,7 @@ export async function discoverDelegateAgents(
 }
 
 export async function resolveDelegateCwd(projectCwd: string, requestedCwd?: string): Promise<string> {
-  const root = await realpath(projectCwd);
+  const root = await findProjectRoot(projectCwd);
   const candidate = await realpath(resolve(root, requestedCwd ?? "."));
   if (!(await stat(candidate)).isDirectory()) throw new Error(`Delegate cwd is not a directory: ${requestedCwd ?? projectCwd}`);
   const pathFromRoot = relative(root, candidate);
@@ -111,6 +114,13 @@ export async function runDelegates(
   if (tasks.length > MAX_TASKS) throw new Error(`Delegate task limit is ${MAX_TASKS}.`);
   if (!options.projectTrusted) throw new Error("Delegation requires a trusted Pi project because delegates load project context files.");
   const agents = await discoverDelegateAgents(options.cwd, options.scope, options.projectTrusted);
+  if (options.scope === "project" || options.scope === "all") {
+    for (const item of tasks) {
+      if (findDelegateAgent(agents, item.agent)) continue;
+      const created = await createProjectDelegateAgent(options.cwd, item.agent);
+      if (!findDelegateAgent(agents, created.name)) agents.push(created);
+    }
+  }
   const modelRuntime = await ModelRuntime.create();
 
   if (mode === "chain") {
@@ -148,9 +158,12 @@ async function runOne(
   options: DelegateRunOptions,
   aggregate: DelegateResult[],
 ): Promise<DelegateResult> {
-  const agent = agents.find((candidate) => candidate.name === item.agent);
+  const agent = findDelegateAgent(agents, item.agent);
   if (!agent) {
-    return failedResult(item, `Unknown delegate agent ${item.agent}. Available: ${agents.map((candidate) => candidate.name).join(", ") || "none"}`);
+    const hint = options.scope === "builtin" || options.scope === "user"
+      ? ` Use scope \"all\" or \"project\" to create it as a reusable project agent.`
+      : "";
+    return failedResult(item, `Unknown delegate agent ${item.agent}. Available: ${agents.map((candidate) => candidate.name).join(", ") || "none"}.${hint}`);
   }
   if (!options.allowMutations && agentCanMutate(agent)) {
     return failedResult(item, `Delegate ${agent.name} has mutating tools. Use the verified Horizon advance workflow for implementation workers.`, agent.source);
@@ -293,18 +306,118 @@ async function loadAgents(dir: string, source: DelegateAgent["source"]): Promise
   return agents;
 }
 
-async function findProjectAgentsDir(cwd: string): Promise<string | null> {
-  let current = cwd;
-  while (true) {
-    const candidate = join(current, CONFIG_DIR_NAME, "agents");
+async function findProjectAgentsDirs(cwd: string): Promise<string[]> {
+  const root = await findProjectRoot(cwd);
+  const candidates = [
+    join(root, CONFIG_DIR_NAME, "agents"),
+    join(root, ...PROJECT_AGENTS_PATH),
+  ];
+  const found: string[] = [];
+  for (const candidate of candidates) {
     try {
-      if ((await stat(candidate)).isDirectory()) return candidate;
+      if ((await stat(candidate)).isDirectory()) found.push(candidate);
+    } catch {
+      // An optional project agent directory may not exist yet.
+    }
+  }
+  return found;
+}
+
+export async function createProjectDelegateAgent(cwd: string, requestedName: string): Promise<DelegateAgent> {
+  const name = normalizeAgentName(requestedName);
+  const root = await findProjectRoot(cwd);
+  const configDir = await ensureContainedDirectory(root, join(root, PROJECT_AGENTS_PATH[0]));
+  const agentsDir = await ensureContainedDirectory(root, join(configDir, PROJECT_AGENTS_PATH[1]));
+  const filePath = join(agentsDir, `${name}.md`);
+  const title = name.split("-").map((part) => part[0]!.toUpperCase() + part.slice(1)).join(" ");
+  const description = `Project-local ${title} specialist.`;
+  const systemPrompt = [
+    `Act as this project's ${title}.`,
+    "",
+    "Approach each delegated task as a focused specialist: establish the relevant scope and criteria, inspect the repository evidence before drawing conclusions, apply the standards of this role, and report concrete findings with file paths. Distinguish verified facts from inference, prioritize material issues, and give concise actionable recommendations.",
+    "",
+    "Remain read-only. Do not modify files or execute mutating commands. Work only on the delegated task and preserve the project's existing conventions and trust boundaries.",
+  ].join("\n");
+  const content = `---\nname: ${name}\ndescription: ${description}\ntools: read, grep, find, ls\n---\n\n${systemPrompt}\n`;
+
+  const temporaryPath = join(agentsDir, `.${name}.${process.pid}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporaryPath, content, { encoding: "utf8", flag: "wx" });
+    try {
+      await link(temporaryPath, filePath);
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+    }
+  } finally {
+    await unlink(temporaryPath).catch(() => undefined);
+  }
+
+  const existing = (await loadAgents(agentsDir, "project")).find((agent) => agent.name === name);
+  if (!existing) throw new Error(`Project delegate definition ${filePath} exists but is invalid.`);
+  return existing;
+}
+
+async function findProjectRoot(cwd: string): Promise<string> {
+  const start = await realpath(cwd);
+  let current = start;
+  while (true) {
+    try {
+      await stat(join(current, ".git"));
+      return current;
     } catch {
       // Continue toward the filesystem root.
     }
     const next = dirname(current);
-    if (next === current) return null;
+    if (next === current) return start;
     current = next;
+  }
+}
+
+async function ensureContainedDirectory(root: string, candidate: string): Promise<string> {
+  try {
+    const existing = await realpath(candidate);
+    assertContained(root, existing);
+    if (!(await stat(existing)).isDirectory()) throw new Error(`Project delegate path is not a directory: ${candidate}`);
+    return existing;
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
+  try {
+    await mkdir(candidate);
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+  }
+  const created = await realpath(candidate);
+  assertContained(root, created);
+  if (!(await stat(created)).isDirectory()) throw new Error(`Project delegate path is not a directory: ${candidate}`);
+  return created;
+}
+
+function assertContained(root: string, candidate: string): void {
+  const pathFromRoot = relative(root, candidate);
+  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${sep}`) || isAbsolute(pathFromRoot)) {
+    throw new Error("Project delegate agents directory must stay within the trusted project directory.");
+  }
+}
+
+function normalizeAgentName(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_AGENT_NAME_LENGTH || !/^[a-zA-Z0-9 _-]+$/.test(trimmed)) {
+    throw new Error(`Delegate agent names must be 1-${MAX_AGENT_NAME_LENGTH} letters, numbers, spaces, underscores, or hyphens.`);
+  }
+  const normalized = trimmed.toLowerCase().replace(/[ _-]+/g, "-").replace(/^-|-$/g, "");
+  if (!normalized || !/^[a-z0-9]/.test(normalized)) throw new Error("Delegate agent name must begin with a letter or number.");
+  return normalized;
+}
+
+function findDelegateAgent(agents: DelegateAgent[], requestedName: string): DelegateAgent | undefined {
+  const exact = agents.find((candidate) => candidate.name === requestedName);
+  if (exact) return exact;
+  try {
+    const normalized = normalizeAgentName(requestedName);
+    return agents.find((candidate) => candidate.name === normalized);
+  } catch {
+    return undefined;
   }
 }
 

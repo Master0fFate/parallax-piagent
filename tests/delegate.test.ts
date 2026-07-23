@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Model } from "@earendil-works/pi-ai";
-import { agentCanMutate, discoverDelegateAgents, resolveDelegateCwd, runDelegates, selectDelegateModel } from "../src/delegate.js";
+import { agentCanMutate, createProjectDelegateAgent, discoverDelegateAgents, resolveDelegateCwd, runDelegates, selectDelegateModel } from "../src/delegate.js";
 
 const dirs: string[] = [];
 async function temp(): Promise<string> {
@@ -83,6 +83,17 @@ describe("delegate agent discovery", () => {
     await expect(resolveDelegateCwd(dir, "not-a-directory")).rejects.toThrow("not a directory");
   });
 
+  it("resolves delegate working directories from the repository root", async () => {
+    const dir = await temp();
+    const launchDir = join(dir, "packages", "api");
+    const sibling = join(dir, "packages", "web");
+    await mkdir(join(dir, ".git"));
+    await mkdir(launchDir, { recursive: true });
+    await mkdir(sibling, { recursive: true });
+
+    expect(await resolveDelegateCwd(launchDir, "packages/web")).toBe(await realpath(sibling));
+  });
+
   it("allows trusted project agents to override built-ins", async () => {
     const dir = await temp();
     const agentsDir = join(dir, ".pi", "agents");
@@ -92,6 +103,57 @@ describe("delegate agent discovery", () => {
     const worker = agents.find((agent) => agent.name === "worker");
     expect(worker?.source).toBe("project");
     expect(worker?.tools).toEqual(["read"]);
+  });
+
+  it("loads .parallax agents after legacy .pi agents so project roles can override them", async () => {
+    const dir = await temp();
+    await mkdir(join(dir, ".pi", "agents"), { recursive: true });
+    await mkdir(join(dir, ".parallax", "agents"), { recursive: true });
+    await writeFile(join(dir, ".pi", "agents", "auditor.md"), "---\nname: auditor\ndescription: Legacy auditor\ntools: read\n---\nLegacy rules.");
+    await writeFile(join(dir, ".parallax", "agents", "auditor.md"), "---\nname: auditor\ndescription: Parallax auditor\ntools: read, grep\n---\nCurrent rules.");
+
+    const auditor = (await discoverDelegateAgents(dir, "project", true)).find((agent) => agent.name === "auditor");
+    expect(auditor?.description).toBe("Parallax auditor");
+    expect(auditor?.filePath).toBe(join(dir, ".parallax", "agents", "auditor.md"));
+  });
+
+  it("creates reusable, read-only project agents from unknown role names", async () => {
+    const dir = await temp();
+    const created = await createProjectDelegateAgent(dir, "Security Boundary Auditor");
+    const definition = await readFile(join(dir, ".parallax", "agents", "security-boundary-auditor.md"), "utf8");
+
+    expect(created.name).toBe("security-boundary-auditor");
+    expect(created.source).toBe("project");
+    expect(created.tools).toEqual(["read", "grep", "find", "ls"]);
+    expect(definition).toContain("Act as this project's Security Boundary Auditor.");
+    expect((await createProjectDelegateAgent(dir, "security-boundary-auditor")).filePath).toBe(created.filePath);
+  });
+
+  it("creates agents at the repository root when delegation starts in a subdirectory", async () => {
+    const dir = await temp();
+    const nested = join(dir, "packages", "api");
+    await mkdir(join(dir, ".git"));
+    await mkdir(nested, { recursive: true });
+
+    const created = await createProjectDelegateAgent(nested, "API Contract Auditor");
+    expect(created.filePath).toBe(join(dir, ".parallax", "agents", "api-contract-auditor.md"));
+    expect((await discoverDelegateAgents(nested, "project", true)).map((agent) => agent.name)).toContain("api-contract-auditor");
+  });
+
+  it("publishes one complete definition when the same role is created concurrently", async () => {
+    const dir = await temp();
+    const created = await Promise.all(Array.from({ length: 8 }, () => createProjectDelegateAgent(dir, "Race Auditor")));
+    expect(new Set(created.map((agent) => agent.filePath)).size).toBe(1);
+    expect(await readFile(created[0]!.filePath, "utf8")).toContain("name: race-auditor");
+  });
+
+  it("rejects project agent names and symlinks that could escape the agents directory", async () => {
+    const dir = await temp();
+    await expect(createProjectDelegateAgent(dir, "../reviewer")).rejects.toThrow("Delegate agent names");
+
+    const outside = await temp();
+    await symlink(outside, join(dir, ".parallax"), process.platform === "win32" ? "junction" : "dir");
+    await expect(createProjectDelegateAgent(dir, "reviewer-two")).rejects.toThrow("trusted project directory");
   });
 
   it("ignores malformed optional definitions", async () => {

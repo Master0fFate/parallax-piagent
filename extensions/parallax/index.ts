@@ -680,7 +680,7 @@ function registerDelegateTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: DELEGATE_TOOL,
     label: "Parallax Delegate",
-    description: "Run isolated Pi SDK agents in-process. Supports single, parallel, or chained delegation without recursively loading extensions. Project agents require project trust.",
+    description: "Run isolated Pi SDK agents in-process. Supports single, parallel, or chained delegation without recursively loading extensions. With project/all scope, an unknown role is created as a reusable read-only agent in .parallax/agents. Project agents require project trust.",
     parameters: DelegateParams,
     async execute(_id, params, signal, onUpdate, ctx) {
       const hasSingle = Boolean(params.agent && params.task);
@@ -700,7 +700,7 @@ function registerDelegateTool(pi: ExtensionAPI): void {
         cwd: ctx.cwd,
         model: ctx.model,
         thinkingLevel: pi.getThinkingLevel(),
-        scope: (params.scope ?? "builtin") as DelegateScope,
+        scope: (params.scope ?? "all") as DelegateScope,
         projectTrusted: ctx.isProjectTrusted(),
         ...(signal ? { signal } : {}),
         ...(params.concurrency ? { concurrency: params.concurrency } : {}),

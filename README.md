@@ -136,7 +136,9 @@ After consecutive failures exhaust the configured retries, Parallax enters recov
 
 `parallax_delegate` activates in PLAN, DEBUG, and HORIZON modes after project trust. It runs isolated agents through Pi's typed SDK in the same process rather than spawning nested CLI processes. Each delegate receives an in-memory session, an explicit tool allowlist, project context files, and no extensions, skills, prompts, or themes. This prevents recursive Parallax loading while preserving cancellation, provider auth, token accounting, and streaming updates.
 
-Built-in roles are `scout`, `planner`, `reviewer`, `worker`, and `critic`. Every delegate model is selected from the authenticated catalog of the active model's provider: low-risk `scout` and `critic` work use the least-cost text model with sufficient context, while planning, review, and implementation retain the active model unless their agent definition names an exact authenticated model from that same provider. This prevents cross-provider routing and avoids spending a premium model on reconnaissance by default. To override a role deliberately, set its Markdown frontmatter to `model: <exact-model-id>`; a missing, cross-provider, or unauthenticated model is rejected rather than silently routed elsewhere. Single, parallel, and `{previous}` chain workflows are supported. Generic delegation is read-only: agents with `write`, `edit`, or `bash` tools are rejected so they cannot bypass parent verification. The worker is enabled only inside `parallax_horizon_advance`, which owns the strict gate and full verification cycle. Trusted `.pi/agents/*.md` definitions can override built-ins when `scope` is `project` or `all`.
+Built-in roles are `scout`, `planner`, `reviewer`, `worker`, and `critic`. Generic delegation defaults to `scope: "all"`. When a requested role does not exist, Parallax turns the role name into a safe slug, creates a reusable read-only definition under `.parallax/agents/<role>.md`, and immediately runs it. For example, requesting `Security Boundary Auditor` creates `.parallax/agents/security-boundary-auditor.md`; later calls reuse that project-specific specialist. Generated roles are intentionally read-only (`read`, `grep`, `find`, and `ls`) and names cannot contain path characters. Teams can review, refine, and commit these Markdown definitions like other project guidance. Use explicit `builtin` or `user` scope when automatic project role creation is not desired.
+
+Every delegate model is selected from the authenticated catalog of the active model's provider: low-risk `scout` and `critic` work use the least-cost text model with sufficient context, while planning, review, and implementation retain the active model unless their agent definition names an exact authenticated model from that same provider. This prevents cross-provider routing and avoids spending a premium model on reconnaissance by default. To override a role deliberately, set its Markdown frontmatter to `model: <exact-model-id>`; a missing, cross-provider, or unauthenticated model is rejected rather than silently routed elsewhere. Single, parallel, and `{previous}` chain workflows are supported. Generic delegation is read-only: agents with `write`, `edit`, or `bash` tools are rejected so they cannot bypass parent verification. The worker is enabled only inside `parallax_horizon_advance`, which owns the strict gate and full verification cycle. Trusted `.parallax/agents/*.md` definitions override both built-ins and legacy `.pi/agents/*.md` definitions when `scope` is `project` or `all`.
 
 ## Hyperplan
 
@@ -178,6 +180,7 @@ parallax-pi pre-commit
 .pi session JSONL          Branch-aware Parallax state snapshots
 .parallax/
   config.json              Optional trusted project configuration
+  agents/*.md              Reusable project delegate definitions
   traces/<session>.json    Exported protocol and verification trace
   verification/*.log       Full output only when context output was truncated
   horizon/
@@ -194,7 +197,7 @@ parallax-pi pre-commit
 
 ## Harness design
 
-The project follows Pi 0.80.10's extension, package, SDK, session, compaction, TUI, trust, prompt-template, and keybinding contracts. Explicit modes keep the primary harness minimal. Worker isolation uses Pi SDK sessions rather than a second custom agent runtime. Project-local code and agents are honored only through Pi's trust boundary.
+The project follows Pi 0.80.10's extension, package, SDK, session, compaction, TUI, trust, prompt-template, and keybinding contracts. Explicit modes keep the primary harness minimal. Worker isolation uses Pi SDK sessions rather than a second custom agent runtime. Project-local code and agents are honored only through Pi's trust boundary. `parallax-pi init` creates the agents directory and a nested `.gitignore` that excludes runtime traces, verification logs, and Horizon state while leaving configuration and agent definitions available to version control.
 
 ## License
 

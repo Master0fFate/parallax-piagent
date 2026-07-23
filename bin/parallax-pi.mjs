@@ -48,7 +48,10 @@ function version() {
 }
 
 async function init() {
-  await mkdir(traceDir, { recursive: true });
+  await Promise.all([
+    mkdir(traceDir, { recursive: true }),
+    mkdir(join(root, "agents"), { recursive: true }),
+  ]);
   const configPath = join(root, "config.json");
   await writeIfMissing(configPath, `${JSON.stringify({
     strictness: "standard",
